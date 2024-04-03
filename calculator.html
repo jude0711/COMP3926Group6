@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rent Calculator with GeoJSON</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: 'Helvetica Bold', Arial, sans-serif;
+            font-weight: bold; 
+        }
+        #map { height: 400px; }
+        .highlight { color: rgb(95, 190, 162); font-weight: bold; }
+    </style>
+</head>
+<body>
+    <button onclick="location.reload()">Refresh</button>
+    <h1>Rent Calculator</h1>
+
+    <label for="houseSize">House Size (sqm):</label>
+    <input type="number" id="houseSize" name="houseSize"><br><br>
+
+    <label for="householdIncome">Household Income:</label>
+    <input type="number" id="householdIncome" name="householdIncome"><br><br>
+
+    <label for="targetRTI">Target RTI:</label>
+    <input type="number" step="0.01" id="targetRTI" name="targetRTI"><br><br>
+
+    <button onclick="calculateRent()">Calculate Rent</button>
+
+    <h2>Calculated Monthly Rent: <span id="calculatedRent">0</span></h2>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+        // Initialize the map
+        var map = L.map('map').setView([22.396428, 114.109497], 11);
+
+        // Load the tile layer from OpenStreetMap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19
+        }).addTo(map);
+        // Define different rents per district based on the category
+        const rentsPerCategory = {
+            'A': { 'WONG TAI SIN': 376, 'KOWLOON CITY': 376, 'KWUN TONG': 376, 'KOWLOON CITY': 376, 'SHAM SHUI PO': 376, 'YAU TSIM MONG': 376, 'ISLANDS': 307, 'KWAI TSING': 307, 'TSUEN WAN': 307, 'TAI PO': 307, 'SHA TIN': 307, 'SAI KUNG': 307, 'TUEN MUN': 307, 'NORTH': 307, 'YUEN LONG': 307, 'CENTRAL & WESTERN': 445, 'WAN CHAI': 445, 'EASTERN': 445, 'SOUTHERN': 445 },
+            'B': { 'WONG TAI SIN': 323, 'KOWLOON CITY': 323, 'KWUN TONG': 323, 'KOWLOON CITY': 323, 'SHAM SHUI PO': 323, 'YAU TSIM MONG': 323, 'ISLANDS': 255, 'KWAI TSING': 255, 'TSUEN WAN': 255, 'TAI PO': 255, 'SHA TIN': 255, 'SAI KUNG': 255, 'TUEN MUN': 255, 'NORTH': 255, 'YUEN LONG': 255, 'CENTRAL & WESTERN': 382, 'WAN CHAI': 382, 'EASTERN': 382, 'SOUTHERN': 382 },
+            'C': { 'WONG TAI SIN': 340, 'KOWLOON CITY': 340, 'KWUN TONG': 340, 'SHAM SHUI PO': 340, 'YAU TSIM MONG': 340, 'ISLANDS': 257, 'KWAI TSING': 257, 'TSUEN WAN': 257, 'TAI PO': 257, 'SHA TIN': 257, 'SAI KUNG': 257, 'TUEN MUN': 257, 'NORTH': 257, 'YUEN LONG': 257, 'CENTRAL & WESTERN': 400, 'WAN CHAI': 400, 'EASTERN': 400, 'SOUTHERN': 400},
+            'D': { 'WONG TAI SIN': 331, 'KOWLOON CITY': 331, 'KWUN TONG': 331, 'SHAM SHUI PO': 331, 'YAU TSIM MONG': 331, 'ISLANDS': 253, 'KWAI TSING': 253, 'TSUEN WAN': 253, 'TAI PO': 253, 'SHA TIN': 253, 'SAI KUNG': 253, 'TUEN MUN': 253, 'NORTH': 253, 'YUEN LONG': 253,'CENTRAL & WESTERN': 413, 'WAN CHAI': 413, 'EASTERN': 413, 'SOUTHERN': 413 },
+            'E': { 'WONG TAI SIN': 340, 'KOWLOON CITY': 340, 'KWUN TONG': 340, 'SHAM SHUI PO': 340, 'YAU TSIM MONG': 340,'ISLANDS': 227, 'KWAI TSING': 227, 'TSUEN WAN': 227, 'TAI PO': 227, 'SHA TIN': 227, 'SAI KUNG': 227, 'TUEN MUN': 227, 'NORTH': 227, 'YUEN LONG': 227,'CENTRAL & WESTERN': 427, 'WAN CHAI': 427, 'EASTERN': 427, 'SOUTHERN': 427}
+
+
+        };
+        // Function to determine the rent category based on house size
+        function getRentCategory(houseSize) {
+            if (houseSize < 40) {
+                return 'A';
+            } else if (houseSize >= 40 && houseSize < 70) {
+                return 'B';
+            } else if (houseSize >= 70 && houseSize < 100) {
+                return 'C';
+            } else if (houseSize >= 100 && houseSize < 160) {
+                return 'D';
+            } else {
+                return 'E';
+            }
+        }
+
+        // Function to calculate the rent and compare with district rents
+        function calculateRent() {
+            var houseSize = document.getElementById('houseSize').value;
+            var householdIncome = document.getElementById('householdIncome').value;
+            var targetRTI = document.getElementById('targetRTI').value;
+
+            var rentCategory = getRentCategory(houseSize);
+            
+            // Calculate the rent
+            var rent = householdIncome * targetRTI;
+
+            // Update the rent on the page
+            document.getElementById('calculatedRent').innerText = rent.toFixed(2);
+
+            // Load and highlight districts based on the rent category
+            loadAndHighlightDistricts(rent, houseSize, rentCategory);
+            
+        }
+
+        // Function to load GeoJSON data and highlight a district
+        function loadAndHighlightDistricts(rent, houseSize, rentCategory) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', 'https://gist.githubusercontent.com/Jiude11/d8293e989faee83767f8b8b9dc84db7a/raw/bce25adc7acc6c3b9a17cf0c3cdcb6e7f3fa264a/gistfile1.txt', true); // The raw URL to your GeoJSON file on GitHub
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    var districtsGeoJSON = JSON.parse(xhr.responseText);
+                    var rentsPerDistrict = rentsPerCategory[rentCategory];
+
+                    // Compare and highlight districts
+                    districtsGeoJSON.features.forEach(function(districtFeature) {
+                        var districtName = districtFeature.properties.ENAME; // Make sure this matches your GeoJSON property name
+                        var districtRent = rentsPerDistrict[districtName] * houseSize; 
+                        if (rent > districtRent) {
+                            highlightDistrict(districtFeature, districtRent); //cannot highlight
+                            
+                        }
+                    });
+                } else {
+                    // Handle the error
+                    console.error('An error occurred loading the GeoJSON data.');
+                    
+                }
+            };
+            xhr.send();
+        }
+
+        // Function to highlight a district and add tooltip
+        function highlightDistrict(feature, districtRent) {
+            L.geoJSON(feature, {
+                style: function() {
+                    return {color: 'green', weight: 2};
+                },
+                onEachFeature: function(feature, layer) {
+              
+                    if (feature.properties && feature.properties.ENAME) {
+                        layer.bindTooltip("District: " + feature.properties.ENAME + "<br>Rent: " + districtRent.toFixed(2));
+                    }
+                }
+            }).addTo(map);
+        }
+    </script>
+</body>
+</html>
